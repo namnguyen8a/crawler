@@ -1,33 +1,40 @@
-# Web Scraper cho Thông báo của Quận Dương Phố, Thượng Hải
+# Web Scraper Nâng cao cho Thông báo của Quận Dương Phố, Thượng Hải
 
 ## Giới thiệu
 
-Đây là một script Python được thiết kế để tự động thu thập dữ liệu từ trang web công bố các phương án quy hoạch của Quận Dương Phố, Thượng Hải. Script sẽ trích xuất thông tin về các dự án lắp đặt thang máy, bao gồm quận, địa chỉ và ngày công bố, sau đó lưu kết quả vào file một cách có tổ chức.
+Đây là một script Python mạnh mẽ được thiết kế để thu thập dữ liệu quy mô lớn từ trang web công bố các phương án quy hoạch của Quận Dương Phố, Thượng Hải. Script có khả năng tự động duyệt qua toàn bộ 251 trang, phân tích và bóc tách thông tin từ các định dạng tiêu đề không đồng nhất, và lưu kết quả vào file Excel một cách an toàn và bền bỉ.
+
+Nó được trang bị các tính năng chuyên nghiệp như khả năng phục hồi sau lỗi (resume from checkpoint) và cơ chế thử lại (retry), đảm bảo quá trình thu thập dữ liệu dài hơi diễn ra một cách đáng tin cậy.
 
 ## Chức năng chính
 
--   **Thu thập dữ liệu (Crawling):** Tự động truy cập vào URL được chỉ định và tải về nội dung HTML của trang web.
--   **Lưu trữ dữ liệu thô:** Lưu lại tất cả các tiêu đề gốc đã thu thập được vào file `crawled_titles.txt` để tham chiếu và kiểm tra.
--   **Trích xuất thông tin:** Phân tích từng tiêu đề để bóc tách ra 3 trường thông tin quan trọng:
-    -   `区` (Quận)
-    -   `地址` (Địa chỉ)
-    -   `公告日期` (Ngày công bố)
+-   **Thu thập đa trang (Multi-page Crawling):** Tự động tạo URL và duyệt qua toàn bộ 251 trang của danh sách thông báo.
+-   **Khả năng phục hồi (Checkpointing):** Tự động lưu lại tiến trình vào file `checkpoint.log` sau mỗi trang. Nếu script bị gián đoạn, lần chạy tiếp theo sẽ **tự động tiếp tục** từ trang chưa hoàn thành, tiết kiệm thời gian và tài nguyên.
+-   **Cơ chế thử lại (Retry Mechanism):** Tự động thử lại vài lần nếu gặp lỗi kết nối mạng tạm thời, tăng cường sự ổn định của quá trình thu thập.
+-   **Phân tích tiêu đề thông minh (Intelligent Parsing):**
+    -   Sử dụng logic "Hybrid" (kết hợp Regex và danh sách từ khóa) để bóc tách thông tin từ các định dạng tiêu đề phức tạp và đa dạng.
+    -   Có khả năng xử lý cả thông báo về nhà ở dân dụng và các dự án công trình công cộng.
+-   **Tách ngày tháng chi tiết:** Tự động tách chuỗi ngày tháng thành 3 cột riêng biệt: `年` (Năm), `月` (Tháng), và `日` (Ngày).
 -   **Ghi dữ liệu an toàn vào Excel:**
     -   Thêm dữ liệu đã được trích xuất vào sheet có tên `shanghai` trong file `模版.xlsx`.
-    -   **Đặc biệt:** Dữ liệu được ghi bắt đầu từ **cột B**, giữ nguyên cột A trống.
-    -   **An toàn:** Quá trình ghi file được thiết kế để **không làm ảnh hưởng, thay đổi hay xóa** bất kỳ sheet nào khác có trong file Excel.
+    -   Đảm bảo dữ liệu được ghi bắt đầu từ **cột B**, giữ nguyên cột A trống.
+    -   **An toàn tuyệt đối:** Quá trình ghi file được thiết kế để **không bao giờ làm ảnh hưởng, thay đổi hay xóa** bất kỳ sheet nào khác có trong file Excel.
+-   **Lưu trữ dữ liệu thô:** Ghi nối tiếp tất cả các tiêu đề gốc đã thu thập được vào file `crawled_titles.txt`.
 
 ## Cài đặt và Hướng dẫn sử dụng
 
 ### Yêu cầu
 
--   Python 3.8+
--   `uv` (Một trình quản lý gói và môi trường ảo cực nhanh cho Python)
+-   Python 3.9+ (khuyến nghị để có hàm `removesuffix`)
 
 ### Các bước cài đặt
 
+Bạn có thể chọn một trong hai cách sau để cài đặt môi trường. **Cách 1 (dùng `uv`) được khuyến khích vì tốc độ nhanh.**
+
+#### Cách 1: Sử dụng `uv` (Nhanh và hiện đại)
+
 1.  **Cài đặt `uv`:**
-    Nếu bạn chưa có `uv`, hãy cài đặt nó.
+    Nếu bạn chưa có, hãy cài đặt trình quản lý gói cực nhanh này.
     ```bash
     # macOS / Linux
     curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -36,60 +43,79 @@
     powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
     ```
 
-2.  **Tạo môi trường ảo:**
-    Mở terminal trong thư mục dự án và chạy lệnh sau để tạo một môi trường ảo có tên là `.venv`.
+2.  **Tạo và kích hoạt môi trường ảo:**
+    Mở terminal trong thư mục dự án và chạy các lệnh sau.
     ```bash
+    # Tạo môi trường ảo
     uv venv
-    ```
-
-3.  **Kích hoạt môi trường ảo:**
-    ```bash
+    
+    # Kích hoạt môi trường
     # macOS / Linux
     source .venv/bin/activate
-
     # Windows (Command Prompt)
     .venv\Scripts\activate
     ```
-    Sau khi kích hoạt, bạn sẽ thấy `(.venv)` ở đầu dòng lệnh.
 
-4.  **Cài đặt các thư viện phụ thuộc:**
-    Sử dụng `uv` để cài đặt các thư viện cần thiết một cách nhanh chóng.
+3.  **Cài đặt các thư viện:**
+    `uv` sẽ cài đặt các gói cần thiết một cách nhanh chóng.
     ```bash
     uv pip install requests beautifulsoup4 pandas openpyxl
     ```
 
-5.  **Chuẩn bị file Excel mẫu:**
-    -   Đây là một bước **bắt buộc**. Hãy tạo một file Excel trong cùng thư mục và đặt tên chính xác là `模版.xlsx`.
-    -   Mở file lên và tạo các sheet bạn cần. Ví dụ: tạo một sheet tên `shenzhen` với định dạng bạn muốn và một sheet tên `shanghai` (có thể để trống hoặc có sẵn tiêu đề). Script sẽ tìm đến sheet `shanghai` để làm việc.
+#### Cách 2: Sử dụng `pip` (Thân thiện với người mới)
 
-6.  **Chạy script:**
+1.  **Tạo và kích hoạt môi trường ảo:**
+    Mở terminal trong thư mục dự án.
+    ```bash
+    # Tạo môi trường ảo
+    python -m venv .venv
+
+    # Kích hoạt môi trường
+    # macOS / Linux
+    source .venv/bin/activate
+    # Windows (Command Prompt)
+    .venv\Scripts\activate
+    ```
+
+2.  **Cài đặt các thư viện:**
+    Sử dụng `pip` để cài đặt các gói.
+    ```bash
+    pip install requests beautifulsoup4 pandas openpyxl
+    ```
+
+### Chuẩn bị và Chạy Script
+
+1.  **Chuẩn bị file Excel mẫu:**
+    -   Đây là một bước **bắt buộc**. Hãy tạo một file Excel trong cùng thư mục và đặt tên chính xác là `模版.xlsx`.
+    -   Mở file lên và tạo các sheet bạn cần. Ví dụ: tạo một sheet tên `shenzhen` với định dạng bạn muốn và một sheet tên `shanghai` với các tiêu đề sau bắt đầu từ ô `B1`: `区`, `地址`, `年`, `月`, `日`.
+
+2.  **Chạy script:**
     Sau khi đã hoàn tất các bước trên, chạy script bằng lệnh sau:
     ```bash
     python main.py
     ```
-    Script sẽ bắt đầu kết nối, thu thập dữ liệu và cập nhật file `模版.xlsx` của bạn.
+    Script sẽ bắt đầu quá trình thu thập. Nếu bị gián đoạn, chỉ cần chạy lại lệnh trên, nó sẽ tự động tiếp tục.
 
-## Cách hoạt động
+3.  **Để thu thập lại từ đầu:**
+    Nếu bạn muốn xóa toàn bộ tiến trình và bắt đầu lại, hãy **xóa file `checkpoint.log`** một cách thủ công và chạy lại script.
 
-Script hoạt động theo một quy trình gồm 2 phần chính:
+## Giải thích các hàm quan trọng
 
-1.  **Phần 1: Thu thập và Xử lý dữ liệu**
-    -   Script sử dụng thư viện `requests` để gửi một yêu cầu HTTP GET đến URL, giả mạo một `User-Agent` của trình duyệt để tránh bị chặn.
-    -   `BeautifulSoup4` được dùng để phân tích cú pháp HTML trả về.
-    -   Nó tìm đến tất cả các thẻ `<li>` dựa trên một bộ chọn CSS (`selector`) được định nghĩa sẵn.
-    -   Với mỗi mục tìm thấy, nó trích xuất tiêu đề đầy đủ và ngày công bố.
-    -   Logic phân tích chuỗi đơn giản được áp dụng để tách Quận và Địa chỉ từ tiêu đề, dựa trên việc tìm ký tự `区` và loại bỏ một chuỗi hậu tố chung.
+Script được xây dựng dựa trên một vài hàm cốt lõi để đảm bảo sự chính xác và ổn định:
 
-2.  **Phần 2: Ghi file an toàn bằng `openpyxl`**
-    -   Đây là phần quan trọng nhất để đảm bảo tính toàn vẹn của file Excel.
-    -   Script sử dụng `openpyxl` để tải toàn bộ file `模版.xlsx` vào bộ nhớ **một cách nguyên bản**.
-    -   Nó chỉ thao tác trên sheet `shanghai`. Nếu sheet chưa tồn tại, nó sẽ được tạo mới.
-    -   Script xác định hàng trống cuối cùng trong sheet và bắt đầu ghi dữ liệu mới từ đó, **ghi vào từng ô cụ thể (cell)** để đảm bảo dữ liệu bắt đầu chính xác từ cột B.
-    -   Cuối cùng, nó lưu lại toàn bộ file. Vì script không hề đọc hay chỉnh sửa các sheet khác, chúng được giữ nguyên 100%.
+-   `parse_title_hybrid(title_text)`
+    -   **Mục đích:** Đây là "bộ não" xử lý logic bóc tách thông tin từ các tiêu đề phức tạp.
+    -   **Cách hoạt động:** Nó thực hiện một quy trình làm sạch đa tầng. Đầu tiên, nó dùng Regex để tìm và tách `杨浦区` (Quận). Sau đó, nó tìm vị trí của "từ khóa nhiễu" đầu tiên (như `项目`, `工程`, `方案`...) trong chuỗi còn lại và cắt bỏ mọi thứ từ vị trí đó trở về sau. Phần còn lại chính là tên địa chỉ/dự án đã được làm sạch. Cách tiếp cận này vừa thông minh vừa đảm bảo tốc độ cao.
+
+-   `find_last_row_with_data(sheet)`
+    -   **Mục đích:** Tìm chính xác hàng cuối cùng có chứa dữ liệu trong một sheet Excel.
+    -   **Cách hoạt động:** Thay vì tin vào thuộc tính `sheet.max_row` (vốn có thể bị sai nếu người dùng đã xóa hàng), hàm này quét ngược từ dưới lên và dừng lại ở hàng đầu tiên nó tìm thấy có chứa bất kỳ dữ liệu nào. Điều này đảm bảo script luôn ghi dữ liệu mới vào đúng vị trí.
+
+-   `read_checkpoint()` và `write_checkpoint(page_num)`
+    -   **Mục đích:** Quản lý cơ chế phục hồi (resume).
+    -   **Cách hoạt động:** `read_checkpoint` sẽ đọc số trang cuối cùng đã hoàn thành từ file `checkpoint.log`. `write_checkpoint` sẽ cập nhật số trang này sau mỗi lần thu thập thành công. Script sẽ không bao giờ tự động xóa file này, đặt toàn quyền kiểm soát vào tay người dùng.
 
 ## Hạn chế hiện tại
 
--   **Cấu hình được hard-coded:** Các thông tin quan trọng như URL, tên file, tên sheet, và đặc biệt là chuỗi hậu tố (`common_suffix`) để loại bỏ khỏi tiêu đề đều đang được định nghĩa trực tiếp trong code. Nếu chúng thay đổi, bạn phải sửa lại code.
--   **Chỉ thu thập trang đầu tiên:** Script hiện tại không xử lý phân trang (pagination). Nó chỉ lấy dữ liệu từ trang đầu tiên của danh sách.
--   **Logic phân tích tiêu đề còn đơn giản:** Logic phân tích tiêu đề để lấy `Quận` và `Địa chỉ` khá đơn giản (dựa vào ký tự `区` và một chuỗi cố định). Nó có thể thất bại nếu định dạng tiêu đề thay đổi hoặc có các trường hợp ngoại lệ.
--   **Phụ thuộc vào cấu trúc HTML:** Bộ chọn CSS (`ul.uli16...`) rất cụ thể cho cấu trúc hiện tại của trang web. Nếu trang web thay đổi layout (dù là một thay đổi nhỏ về class), script sẽ không tìm thấy dữ liệu và ngừng hoạt động.
+-   **Cấu hình được hard-coded:** Các thông tin như URL, tên file, và đặc biệt là danh sách các "từ khóa nhiễu" (`BOUNDARY_KEYWORDS`) đều đang được định nghĩa trực tiếp trong code.
+-   **Phụ thuộc vào cấu trúc HTML:** Bộ chọn CSS (`ul.uli16...`) rất cụ thể cho cấu trúc hiện tại của trang web. Nếu trang web thay đổi layout, script sẽ cần được cập nhật.
