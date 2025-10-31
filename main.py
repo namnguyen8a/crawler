@@ -22,8 +22,13 @@ headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-# (Các hàm tiện ích giữ nguyên)
+# Danh sách từ khóa nhiễu
+BOUNDARY_KEYWORDS = [
+    "道路", "项目", "地块", "工程", "方案", "规划", "设计", "建设", "新建", "改建", "修缮", "扩建", "改造", "用房", "公示", "公告"
+]
+
 def find_last_row_with_data(sheet):
+    """Quét ngược từ dưới lên để tìm hàng cuối cùng thực sự có dữ liệu."""
     for row in range(sheet.max_row, 0, -1):
         for cell in sheet[row]:
             if cell.value is not None:
@@ -31,6 +36,7 @@ def find_last_row_with_data(sheet):
     return 0
 
 def parse_title_hybrid(title_text):
+    """Hàm phân tích tiêu đề thông minh với quy tắc ưu tiên cho địa chỉ dân dụng."""
     district = ""
     address = title_text.strip()
     match = re.search(r'(杨浦区)', address)
@@ -38,44 +44,45 @@ def parse_title_hybrid(title_text):
         district = match.group(1)
         address = address.replace(district, '', 1).strip()
     address = address.replace('（暂名）', '').strip()
-    BOUNDARY_KEYWORDS = [
-        "项目", "地块", "工程", "方案", "规划", "设计", "建设", "新建", "改建", "修缮", "扩建", "改造", "用房", "公示", "公告"
-    ]
-    min_pos = -1
-    for keyword in BOUNDARY_KEYWORDS:
-        pos = address.find(keyword)
-        if pos != -1 and (min_pos == -1 or pos < min_pos):
-            min_pos = pos
-    if min_pos != -1:
-        address = address[:min_pos].strip()
+    hao_pos = address.rfind('号')
+    if hao_pos != -1:
+        address = address[:hao_pos + 1].strip()
+    else:
+        min_pos = -1
+        for keyword in BOUNDARY_KEYWORDS:
+            pos = address.find(keyword)
+            if pos != -1 and (min_pos == -1 or pos < min_pos):
+                min_pos = pos
+        if min_pos != -1:
+            address = address[:min_pos].strip()
     return district, address
 
+# <<< SỬA LỖI: THÊM LẠI CÁC HÀM CHECKPOINT BỊ THIẾU >>>
 def read_checkpoint():
     if os.path.exists(checkpoint_file):
         with open(checkpoint_file, 'r') as f:
-            try: return int(f.read().strip())
-            except ValueError: return 0
+            try:
+                return int(f.read().strip())
+            except ValueError:
+                return 0
     return 0
 
 def write_checkpoint(page_num):
     with open(checkpoint_file, 'w') as f:
         f.write(str(page_num))
 
-# --- BẮT ĐẦU SCRIPT ---
+# --- PHẦN 1: THU THẬP VÀ XỬ LÝ DỮ LIỆU ---
 try:
     all_extracted_data = []
     all_raw_titles = []
 
-    # Đọc checkpoint để xác định trang bắt đầu
     last_completed_page = read_checkpoint()
     start_page = last_completed_page + 1
 
-    # <<< THAY ĐỔI QUAN TRỌNG: Kiểm tra xem đã hoàn thành chưa >>>
     if start_page > total_pages:
         print(f"Checkpoint cho thấy đã thu thập xong {last_completed_page}/{total_pages} trang. Không cần chạy lại.")
         print("Để thu thập lại từ đầu, vui lòng xóa file 'checkpoint.log' và chạy lại script.")
     else:
-        # Chỉ chạy vòng lặp nếu công việc chưa hoàn thành
         if start_page > 1:
             print(f"Đã phát hiện checkpoint. Tiếp tục từ trang {start_page}...")
 
@@ -94,13 +101,12 @@ try:
                     response.raise_for_status()
                     break
                 except requests.exceptions.HTTPError as http_err:
-                    print(f"  Lỗi HTTP khi truy cập trang {page_num}: {http_err}. Có thể trang không tồn tại. Dừng lại.")
+                    print(f"  Lỗi HTTP khi truy cập trang {page_num}: {http_err}. Dừng lại.")
                     response = None
                     break
                 except requests.exceptions.RequestException as req_err:
                     print(f"  Lỗi kết nối ở trang {page_num} (lần {attempt + 1}/{retry_attempts}): {req_err}")
                     if attempt < retry_attempts - 1:
-                        print(f"  Sẽ thử lại sau {retry_delay} giây...")
                         time.sleep(retry_delay)
                     else:
                         print("  Đã hết số lần thử lại. Bỏ qua trang này.")
@@ -135,16 +141,13 @@ try:
             time.sleep(request_delay)
 
         # --- KẾT THÚC VÒNG LẶP ---
-
         print(f"\n>>> Thu thập hoàn tất. Tổng cộng {len(all_raw_titles)} tiêu đề mới đã được lấy trong lần chạy này. <<<\n")
 
-        # Ghi file txt ở chế độ 'a' (append)
         if all_raw_titles:
             with open(txt_filename, 'a', encoding='utf-8') as f:
                 f.write('\n'.join(all_raw_titles) + '\n')
             print(f"Hoàn tất! Đã thêm {len(all_raw_titles)} tiêu đề thô vào file '{txt_filename}'")
         
-        # Chỉ ghi vào Excel nếu có dữ liệu mới
         if all_extracted_data:
             columns_order = ['区', '地址', '年', '月', '日']
             new_df = pd.DataFrame(all_extracted_data)[columns_order]
@@ -153,7 +156,6 @@ try:
                 sheet = book[sheet_name_to_update]
             else:
                 sheet = book.create_sheet(sheet_name_to_update)
-                # Chỉ ghi header nếu sheet thực sự trống
                 if find_last_row_with_data(sheet) == 0:
                     headers_list = list(new_df.columns)
                     for col_idx, header_value in enumerate(headers_list):
