@@ -1,0 +1,8 @@
+from newspaper import Article
+url = r'https://www.jingan.gov.cn/search/mhsearch.html#search/query=%E5%8A%A0%E8%A3%85%E7%94%B5%E6%A2%AF'
+
+a = Article(url, language='zh') # Chinese
+
+a_down = a.download()
+a_parse = a.parse()
+print(a_parse)
