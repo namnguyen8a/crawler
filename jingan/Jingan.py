@@ -86,61 +86,60 @@ try:
         if start_page > 1:
             print(f"Đã phát hiện checkpoint. Tiếp tục từ trang {start_page}...")
 
-        # for page_num in range(start_page, total_pages + 1):
-        # if page_num == 1:
-        #     current_url = base_url + "index.html"
-        # else:
-        #     current_url = f"{base_url}index_{page_num}.html"
-        current_url = base_url
-        page_num = 1
-        print(f"--- Đang thu thập trang {page_num}/{total_pages}: {current_url} ---")
+        for page_num in range(start_page, total_pages + 1):
+            if page_num == 1:
+                current_url = base_url + "index.html"
+            else:
+                current_url = f"{base_url}index_{page_num}.html"
 
-        response = None
-        for attempt in range(retry_attempts):
-            try:
-                response = requests.get(current_url, headers=headers, timeout=30)
-                response.raise_for_status()
+            print(f"--- Đang thu thập trang {page_num}/{total_pages}: {current_url} ---")
+
+            response = None
+            for attempt in range(retry_attempts):
+                try:
+                    response = requests.get(current_url, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    break
+                except requests.exceptions.HTTPError as http_err:
+                    print(f"  Lỗi HTTP khi truy cập trang {page_num}: {http_err}. Dừng lại.")
+                    response = None
+                    break
+                except requests.exceptions.RequestException as req_err:
+                    print(f"  Lỗi kết nối ở trang {page_num} (lần {attempt + 1}/{retry_attempts}): {req_err}")
+                    if attempt < retry_attempts - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        print("  Đã hết số lần thử lại. Bỏ qua trang này.")
+
+            if response is None:
+                continue
+
+            response.encoding = 'utf-8'
+            soup = BeautifulSoup(response.text, 'html.parser')
+            list_items = soup.select('div.maya-result-item clearfix')
+
+            if not list_items:
+                print(f"Trang {page_num} không có dữ liệu. Dừng quá trình thu thập.")
                 break
-            except requests.exceptions.HTTPError as http_err:
-                print(f"  Lỗi HTTP khi truy cập trang {page_num}: {http_err}. Dừng lại.")
-                response = None
-                break
-            except requests.exceptions.RequestException as req_err:
-                print(f"  Lỗi kết nối ở trang {page_num} (lần {attempt + 1}/{retry_attempts}): {req_err}")
-                if attempt < retry_attempts - 1:
-                    time.sleep(retry_delay)
-                else:
-                    print("  Đã hết số lần thử lại. Bỏ qua trang này.")
 
-        if response is None:
-            continue
+            for item in list_items:
+                date_tag = item.find('span', class_='doc-date')
+                title_tag = item.find('a')
+                address_tag = item.find('span', class_='doc-title')
+                if date_tag and title_tag:
+                    full_title = title_tag.get_text(strip=True)
+                    all_raw_titles.append(full_title)
+                    district, address = parse_title_hybrid(full_title)
+                    date_string = date_tag.get_text(strip=True)
+                    parts = date_string.split('.')
+                    year, month, day = (parts[0], parts[1], parts[2]) if len(parts) == 3 else ("", "", "")
+                    all_extracted_data.append({
+                        '区': district, '地址': address, '年': year, '月': month, '日': day
+                    })
 
-        response.encoding = 'utf-8'
-        soup = BeautifulSoup(response.text, 'html.parser')
-        list_items = soup.select('div.maya-result-item clearfix')
-
-        if not list_items:
-            print(f"Trang {page_num} không có dữ liệu. Dừng quá trình thu thập.")
-            break
-
-        for item in list_items:
-            date_tag = item.find('span', class_='doc-date')
-            title_tag = item.find('a')
-            address_tag = item.find('span', class_='doc-title')
-            if date_tag and title_tag:
-                full_title = title_tag.get_text(strip=True)
-                all_raw_titles.append(full_title)
-                district, address = parse_title_hybrid(full_title)
-                date_string = date_tag.get_text(strip=True)
-                parts = date_string.split('.')
-                year, month, day = (parts[0], parts[1], parts[2]) if len(parts) == 3 else ("", "", "")
-                all_extracted_data.append({
-                    '区': district, '地址': address, '年': year, '月': month, '日': day
-                })
-
-        write_checkpoint(page_num)
-        print(f"  Đã xử lý xong trang {page_num}. Đã lưu checkpoint.")
-        time.sleep(request_delay)
+            write_checkpoint(page_num)
+            print(f"  Đã xử lý xong trang {page_num}. Đã lưu checkpoint.")
+            time.sleep(request_delay)
 
         # --- KẾT THÚC VÒNG LẶP ---
         print(f"\n>>> Thu thập hoàn tất. Tổng cộng {len(all_raw_titles)} tiêu đề mới đã được lấy trong lần chạy này. <<<\n")
