@@ -6,54 +6,48 @@ import time
 from openpyxl import load_workbook
 import json
 
-# --- CẤU HÌNH CHÍNH ---
+# --- CẤU HÌNH BỘ LỌC THÔNG MINH ---
 
-# 1. TỪ KHÓA TÌM KIẾM (Query gửi lên API)
-SEARCH_KEYWORDS = ["加装电梯"] 
+# 1. BỘ LỌC TIN TỨC (News Indicator Regex) - Ưu tiên cao nhất
+# Tìm kiếm các dấu câu hoặc cụm từ rất đặc trưng cho tin tức/bài báo.
+# [“丨【】！……？] -> Tìm bất kỳ dấu nào trong danh sách.
+# |如何 -> HOẶC tìm từ "làm thế nào".
+NEWS_INDICATOR_REGEX = re.compile(r'[“丨【】！……？]|如何|怎么办')
 
-# 2. BỘ LỌC "QUY TẮC VÀNG" (Regex Whitelist)
-# Tiêu đề PHẢI khớp với ít nhất một trong các mẫu này mới được coi là hợp lệ.
-# \d+ nghĩa là "một hoặc nhiều chữ số".
+# 2. BỘ LỌC "QUY TẮC VÀNG" (Regex Whitelist) - Yêu cầu phải có mẫu địa chỉ
+# Tìm kiếm mẫu "Số + Từ khóa" HOẶC một số từ khóa địa điểm cụ thể.
 ADDRESS_REGEX_PATTERN = re.compile(
-    r'\d+号楼?'   # Ví dụ: 15号 hoặc 15号楼
-    r'|\d+弄'     # Ví dụ: 123弄
-    r'|\d+幢'     # Ví dụ: 5幢
-    r'|\d+支弄'   # Ví dụ: 1支弄
-    r'|\d+街坊'   # Ví dụ: 96街坊
+    r'\d+号楼?|\d+弄|\d+幢|\d+支弄|\d+街坊|号|号楼|弄|宅楼|幢|小区|中学|小学'
 )
 
-# 3. TỪ KHÓA LOẠI TRỪ (Blacklist) - Dùng để loại bỏ tin tức, rác
+# 3. TỪ KHÓA LOẠI TRỪ (Blacklist) - Dùng để bắt các trường hợp còn sót lại
 BLACKLIST_KEYWORDS = [
     "培训", "会议", "宣传", "大民生", "指导意见", "一图读懂", "工作推进", "约法三章", 
     "指尖办理", "后半篇文章", "提质增效", "印发", "通知", "民心工程", "结合", 
-    "治理", "党建", "实事", "全覆盖", "如何", "推进会", "经验", "赛跑", "负责"
+    "治理", "党建", "实事", "全覆盖", "推进会", "经验", "赛跑", "负责", "签约成功",
+    "竣工", "完工", "圆梦", "开工仪式", "书写"
 ]
 
-# 4. TỪ KHÓA LÀM SẠCH (Cleanup) - Dùng để cắt bỏ phần thừa SAU KHI đã lọc
+# 4. TỪ KHÓA LÀM SẠCH (Cleanup) - Dùng để cắt gọt địa chỉ
 CLEANUP_KEYWORDS = [
     "街道", "项目", "地块", "工程", "方案", "规划", "设计", "建设", "新建", "改建", "修缮", 
     "扩建", "改造", "用房", "公示", "公告", "预公告", "关于", "（已结束）", "的意见征询", 
-    "旧住房", "成套", "公众反馈意见的处理情况"
+    "旧住房", "成套", "公众反馈意见的处理情况", "单元楼"
 ]
 
 # --- CẤU HÌNH KỸ THUẬT ---
-# <<< KHÔI PHỤC LẠI THÔNG SỐ CHÍNH XÁC CỦA BẠN >>>
+SEARCH_KEYWORDS = ["加装电梯"]
 api_url = r'https://ss.shanghai.gov.cn/manda-app/api/app/search/v1/1ywaiqo/search'
 request_delay = 0.5; retry_attempts = 3; retry_delay = 5
 checkpoint_file = 'checkpoint.log'; txt_filename = 'crawled_titles.txt'
 excel_filename = '模版.xlsx'; sheet_name_to_update = 'shanghai'
-
-# Giữ nguyên headers của bạn
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/plain, */*',
-    'Origin': 'https://www.shhuangpu.gov.cn',
-    'Referer': 'https://www.shhuangpu.gov.cn/',
+    'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*',
+    'Origin': 'https://www.shhuangpu.gov.cn', 'Referer': 'https://www.shhuangpu.gov.cn/',
 }
 
 # --- CÁC HÀM HỖ TRỢ ---
-# (Các hàm này đã ổn định, không cần thay đổi)
 def find_last_row_with_data(sheet):
     for row in range(sheet.max_row, 0, -1):
         for cell in sheet[row]:
@@ -95,70 +89,63 @@ try:
     saved_keyword, last_completed_page = read_checkpoint()
 
     for keyword in SEARCH_KEYWORDS:
-        if saved_keyword and SEARCH_KEYWORDS.index(keyword) < SEARCH_KEYWORDS.index(saved_keyword):
-            print(f"Bỏ qua: '{keyword}'"); continue
-
+        if saved_keyword and SEARCH_KEYWORDS.index(keyword) < SEARCH_KEYWORDS.index(saved_keyword): continue
         print(f"\n{'='*20} BẮT ĐẦU VỚI TỪ KHÓA: '{keyword}' {'='*20}")
-        
-        # <<< KHÔI PHỤC LẠI PAYLOAD CHÍNH XÁC CỦA BẠN >>>
         initial_payload = {
-            "cid": "vcXSblaG6SxswWniwgOsNTFg1qcaNlvo",
-            "uid": "vcXSblaG6SxswWniwgOsNTFg1qcaNlvo",
-            "query": keyword,
-            "current": 1,
-            "size": 20, # Kích thước trang là 20
-            "disable_correction": False,
+            "cid": "vcXSblaG6SxswWniwgOsNTFg1qcaNlvo", "uid": "vcXSblaG6SxswWniwgOsNTFg1qcaNlvo",
+            "query": keyword, "current": 1, "size": 20, "disable_correction": False,
             "facets": {"view": [{"type": "value", "name": "view", "sort": {"count": "desc"}, "size": 10}]},
             "input_type": "Input"
         }
-        
         try:
             print("Đang kiểm tra tổng số trang...")
-            initial_response = requests.post(api_url, headers=headers, json=initial_payload, timeout=30)
-            initial_response.raise_for_status()
-            initial_data = initial_response.json()
-            total_pages = initial_data.get('result', {}).get('_meta', {}).get('page', {}).get('total_pages', 0)
-            if total_pages == 0: print(f"Không có kết quả. Bỏ qua."); continue
-            print(f"Phát hiện {total_pages} trang kết quả.")
+            resp = requests.post(api_url, headers=headers, json=initial_payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            total_pages = data.get('result', {}).get('_meta', {}).get('page', {}).get('total_pages', 0)
+            if total_pages == 0: print(f"Không có kết quả."); continue
+            print(f"Phát hiện {total_pages} trang.")
         except requests.exceptions.RequestException as e: print(f"Lỗi khi lấy tổng số trang: {e}"); continue
         
         start_page = 1
         if keyword == saved_keyword: start_page = last_completed_page + 1
-        if start_page > total_pages: print(f"Đã xong từ khóa '{keyword}'."); continue
+        if start_page > total_pages: continue
 
         for page_num in range(start_page, total_pages + 1):
             payload = initial_payload.copy(); payload['current'] = page_num
-            print(f"--- Đang thu thập trang {page_num}/{total_pages} (Từ khóa: '{keyword}') ---")
+            print(f"--- Đang thu thập trang {page_num}/{total_pages} ---")
             
             response = None
             for attempt in range(retry_attempts):
                 try:
                     response = requests.post(api_url, headers=headers, json=payload, timeout=30)
                     response.raise_for_status(); break
-                except requests.exceptions.RequestException as req_err:
-                    print(f"  Lỗi kết nối (lần {attempt + 1}): {req_err}"); time.sleep(retry_delay)
+                except requests.exceptions.RequestException as e: print(f"  Lỗi kết nối (lần {attempt + 1}): {e}"); time.sleep(retry_delay)
             if response is None: continue
             
             try: data = response.json(); results = data.get('result', {}).get('items', [])
             except json.JSONDecodeError: print(f"  Lỗi JSON."); continue
-            if not results: print(f"Trang {page_num} không có dữ liệu."); break
+            if not results: break
 
             for item in results:
                 full_title = item.get('title', {}).get('raw', '').strip()
                 if not full_title: continue
 
                 # ============================================================
-                # BỘ LỌC REGEX THÔNG MINH
+                # HỆ THỐNG LỌC ĐA TẦNG
                 # ============================================================
-                # 1. KIỂM TRA BLACKLIST
+                # Tầng 1: Lọc theo dấu hiệu tin tức
+                if NEWS_INDICATOR_REGEX.search(full_title):
+                    print(f"  [BỎ QUA - DẤU HIỆU TIN TỨC] {full_title}"); continue
+                
+                # Tầng 2: Lọc theo từ khóa Blacklist
                 if any(spam_word in full_title for spam_word in BLACKLIST_KEYWORDS):
-                    print(f"  [BỎ QUA - TIN TỨC] {full_title}"); continue
+                    print(f"  [BỎ QUA - TỪ KHÓA BLACKLIST] {full_title}"); continue
 
-                # 2. KIỂM TRA "QUY TẮC VÀNG"
+                # Tầng 3: Lọc theo mẫu địa chỉ (Whitelist)
                 if not ADDRESS_REGEX_PATTERN.search(full_title):
                     print(f"  [BỎ QUA - KHÔNG CÓ MẪU ĐỊA CHỈ] {full_title}"); continue
                 
-                # NẾU VƯỢT QUA CẢ 2 BỘ LỌC -> CHẤP NHẬN
                 print(f"  [CHẤP NHẬN] {full_title}")
                 all_raw_titles.append(full_title)
                 district, address = parse_title_hybrid_smart(full_title)
@@ -168,8 +155,7 @@ try:
                 all_extracted_data.append({'区': district, '地址': address, '年': year, '月': month, '日': day})
 
             write_checkpoint(keyword, page_num)
-            time.sleep(request_delay)
-    
+            time.sleep(request_delay)    
     # --- GHI DỮ LIỆU ---
     # (Phần này không thay đổi)
     print(f"\n>>> HOÀN TẤT. {len(all_extracted_data)} mục hợp lệ đã được xử lý. <<<\n")
