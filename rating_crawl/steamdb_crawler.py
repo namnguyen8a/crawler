@@ -6,7 +6,7 @@ from urllib.parse import quote
 import pandas as pd
 from bs4 import BeautifulSoup
 
-# Import thư viện chống Cloudflare tối thượng
+# Import thư viện chống Cloudflare
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -39,7 +39,7 @@ DEVELOPERS =[
 ]
 
 BASE_URL = "https://steamdb.info"
-DELAY = 3  # Nghỉ 3 giây giữa các lần chuyển trang để tránh bị block do spam quá nhanh
+DELAY = 3  # Nghỉ 3 giây giữa các lần chuyển trang để tránh bị block
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
@@ -131,11 +131,11 @@ def init_driver():
     prefs = {"profile.managed_default_content_settings.images": 2}
     options.add_experimental_option("prefs", prefs)
     
-    # Quan trọng: KHÔNG dùng headless=True. Cloudflare rất ghét Headless.
-    # Thay vào đó, ta khởi động bình thường nhưng thu nhỏ cửa sổ.
-    driver = uc.Chrome(options=options, headless=False)
+    #[QUAN TRỌNG] FIX LỖI MISMATCH VERSION: 
+    # Báo cho thư viện biết Chrome trên máy bạn đang là bản 146
+    driver = uc.Chrome(options=options, headless=False, version_main=146)
     
-    # Thu nhỏ cửa sổ xuống Taskbar để không làm phiền bạn làm việc khác
+    # Thu nhỏ cửa sổ xuống Taskbar để không làm phiền
     driver.minimize_window() 
     return driver
 
@@ -149,8 +149,8 @@ def main():
         driver.get(f"{BASE_URL}/developers/")
         
         try:
-            # Chờ Cloudflare tự động xác thực (tối đa 20 giây) cho đến khi thấy bảng
-            WebDriverWait(driver, 20).until(
+            # Chờ Cloudflare tự động xác thực (tối đa 25 giây) cho đến khi thấy bảng
+            WebDriverWait(driver, 25).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "table.table-products"))
             )
             
@@ -169,7 +169,7 @@ def main():
             print("  ✗ Bị chặn ở trang chủ hoặc timeout. Đang tiếp tục...\n")
 
         found_in_list =[d for d in DEVELOPERS if d in list_data]
-        not_in_list   = [d for d in DEVELOPERS if d not in list_data]
+        not_in_list   =[d for d in DEVELOPERS if d not in list_data]
         print(f"Targets tìm thấy trong Top List ({len(found_in_list)}): {found_in_list}")
         print(f"Targets KHÔNG có trong Top List ({len(not_in_list)}): {not_in_list}\n")
 
@@ -190,7 +190,7 @@ def main():
             try:
                 driver.get(url)
                 # Đợi cho tới khi bảng game xuất hiện HOẶC hiện thông báo lỗi (không tìm thấy)
-                WebDriverWait(driver, 20).until(
+                WebDriverWait(driver, 25).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "table.table-sales, .panel-error"))
                 )
                 
@@ -207,7 +207,7 @@ def main():
                 print(f"  Trạng thái: {label} | Lấy được {len(records)} rows")
 
                 if not records:
-                    summaries.append({"developer": dev, "error": "no_data_or_cloudflare"})
+                    summaries.append({"developer": dev, "error": "no_data"})
                     time.sleep(DELAY)
                     continue
 
